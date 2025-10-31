@@ -69,18 +69,27 @@ void run_solver(int nx, int ny, int rank, int size, FILE *data_file) {
     double error = 0.0;
     double start_time = MPI_Wtime();
 
+    MPI_Request req[4];
+    int req_count = 0;
+
     for (iter = 0; iter < max_iterations; iter++) {
-        // Exchange ghost rows with neighbors
+        // Exchange ghost rows with neighbors using non-blocking sends
+        req_count = 0;
+
         if (rank > 0) {
-            MPI_Send(u[1], ny, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD);
-            MPI_Recv(u[0], ny, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Isend(u[1], ny, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD, &req[req_count++]);
+            MPI_Irecv(u[0], ny, MPI_DOUBLE, rank-1, 0, MPI_COMM_WORLD, &req[req_count++]);
         }
         if (rank < size-1) {
-            MPI_Send(u[local_nx], ny, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD);
-            MPI_Recv(u[local_nx+1], ny, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            MPI_Isend(u[local_nx], ny, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, &req[req_count++]);
+            MPI_Irecv(u[local_nx+1], ny, MPI_DOUBLE, rank+1, 0, MPI_COMM_WORLD, &req[req_count++]);
         }
 
-        // Jacobi iteration
+        // Wait for all communication to complete
+        if (req_count > 0) {
+            MPI_Waitall(req_count, req, MPI_STATUSES_IGNORE);
+        }
+
         for (int i = 1; i <= local_nx; i++) {
             for (int j = 1; j < ny-1; j++) {
                 u_new[i][j] = coeff * (
@@ -91,7 +100,6 @@ void run_solver(int nx, int ny, int rank, int size, FILE *data_file) {
             }
         }
 
-        // Compute local error
         double local_error = 0.0;
         for (int i = 1; i <= local_nx; i++) {
             for (int j = 1; j < ny-1; j++) {
