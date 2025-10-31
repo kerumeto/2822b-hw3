@@ -15,17 +15,72 @@ double source_term(double x, double y) {
     return -2.0 * (2.0 * PI) * (2.0 * PI) * sin(2.0 * PI * x) * cos(2.0 * PI * y);
 }
 
+// Helper function to allocate 2D array
+double** allocate_2d_array(int nx, int ny) {
+    double **arr = (double **)malloc(nx * sizeof(double *));
+    for (int i = 0; i < nx; i++) {
+        arr[i] = (double *)malloc(ny * sizeof(double));
+    }
+    return arr;
+}
+
+// Helper function to free 2D array
+void free_2d_array(double **arr, int nx) {
+    for (int i = 0; i < nx; i++) {
+        free(arr[i]);
+    }
+    free(arr);
+}
+
+// Helper function to initialize arrays
+void initialize_arrays(double **u, double **u_new, double **f, double **u_exact,
+                       int nx, int ny, double x_min, double y_min, 
+                       double dx, double dy) {
+    // Initialize interior and all points
+    #pragma omp parallel for collapse(2)
+    for (int i = 0; i < nx; i++) {
+        for (int j = 0; j < ny; j++) {
+            double x = x_min + i * dx;
+            double y = y_min + j * dy;
+            
+            // Initialize solution to zero
+            u[i][j] = 0.0;
+            u_new[i][j] = 0.0;
+            
+            // Compute source term
+            f[i][j] = source_term(x, y);
+            
+            // Store exact solution for comparison
+            u_exact[i][j] = exact_solution(x, y);
+        }
+    }
+    
+    // Apply boundary conditions: u = 0 at boundaries
+    #pragma omp parallel for
+    for (int i = 0; i < nx; i++) {
+        u[i][0] = 0.0;
+        u[i][ny-1] = 0.0;
+        u_new[i][0] = 0.0;
+        u_new[i][ny-1] = 0.0;
+    }
+    
+    #pragma omp parallel for
+    for (int j = 0; j < ny; j++) {
+        u[0][j] = 0.0;
+        u[nx-1][j] = 0.0;
+        u_new[0][j] = 0.0;
+        u_new[nx-1][j] = 0.0;
+    }
+}
+
 int main(int argc, char *argv[]) {
     // Domain parameters
     double x_min = 0.0, x_max = 1.0;
     double y_min = 0.0, y_max = 1.0;
     
     // Grid parameters
-    // Number of points in x-direction
-    int nx = 256;
-    
-    // Number of points in y-direction  
-    int ny = 256;
+    int nx = 256;  // Number of points in x-direction
+    int ny = 256;  // Number of points in y-direction
     
     if (argc > 1) {
         nx = atoi(argv[1]);
